@@ -121,7 +121,8 @@ module tb_collision;
         saw_down = 0; n = 0;
         while (state == 2'd2 && n < 500) begin
             do_tick; n = n + 1;
-            if (screen == 0 && prev_scr == 1) saw_down = 1;
+            if (screen == 0 && prev_scr == 1) begin saw_down = 1; expect_eq("screen down: fell flag", fell, 1); end
+            else expect_eq("fell flag only on the falling frame", fell, 0);
         end
         expect_eq("screen down: happened", saw_down, 1);
         expect_eq("screen down: lands on floor", py, 448);

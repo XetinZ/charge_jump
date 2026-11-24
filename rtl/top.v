@@ -10,6 +10,10 @@
 //   dip_probe : 1 = UART 핀 확인 모드. 네 핀 모두 입력으로 두고(아무것도 구동하지 않음) LED 로 보여준다.
 //     LED1~4 = A3, A5, F6, C6 에서 신호 변화가 있으면 0.2초 켜짐,  LED5~8 = 같은 순서로 현재 레벨
 //     PC 가 보내는 동안 켜지는 핀이 PC → FPGA 방향이다. FPGA 는 같은 단자의 다른 핀으로 보내야 한다.
+//   dip_ext_off : 1 = 확장 기능 끔 (피에조 무음, 7-세그먼트 꺼짐, LCD 는 평소 문구만)
+//
+// 확장 출력: 1자리 7-세그먼트 = 스테이지 번호, 8자리 7-세그먼트 = 경과 시간(0.01초),
+//            텍스트 LCD = 떨어졌을 때 놀림 문구, 피에조 = 차지·점프 효과음
 module top #(
     parameter integer CLK_HZ_OVERRIDE = 0,   // 0 이면 params.vh 의 CLK_HZ (시뮬레이션 단축용)
     // 보드 극성. 교재 확인 후 맞춘다.
@@ -27,8 +31,17 @@ module top #(
     input  wire       dip_uart_sel,
     input  wire       dip_uart_port,
     input  wire       dip_probe,
+    input  wire       dip_ext_off,
     output wire [7:0] led,
     output wire       servo,
+    output wire [7:0] seg,           // 1자리 7-세그먼트 {a, b, c, d, e, f, g, dp}
+    output wire [7:0] ar_seg,        // 8자리 7-세그먼트 데이터
+    output wire [7:0] ar_sel,        // 8자리 7-세그먼트 자리 선택 (0 = 선택)
+    output wire       lcd_rs,
+    output wire       lcd_rw,
+    output wire       lcd_e,
+    output wire [7:0] lcd_d,
+    output wire       piezo,
     inout  wire       uart_a3,
     inout  wire       uart_a5,
     inout  wire       uart_f6,
@@ -62,18 +75,20 @@ module top #(
         .clk(clk), .rst(rst), .in(btn_reset ^ btn_inv), .level(), .rise(rs_rise), .fall());
 
     // 딥 스위치는 2단 동기화만 한다
-    reg [1:0] trig_s, test_s, sel_s, port_s, probe_s;
+    reg [1:0] trig_s, test_s, sel_s, port_s, probe_s, ext_s;
     always @(posedge clk) begin
         trig_s  <= {trig_s[0],  dip_trig     ^ dip_inv};
         test_s  <= {test_s[0],  dip_test     ^ dip_inv};
         sel_s   <= {sel_s[0],   dip_uart_sel ^ dip_inv};
         port_s  <= {port_s[0],  dip_uart_port ^ dip_inv};
         probe_s <= {probe_s[0], dip_probe    ^ dip_inv};
+        ext_s   <= {ext_s[0],   dip_ext_off  ^ dip_inv};
     end
     wire trig_mode  = trig_s[1];
     wire test_mode  = test_s[1];
     wire [1:0] uart_idx = {port_s[1], sel_s[1]};      // 0 A3, 1 A5, 2 F6, 3 C6
     wire probe_mode = probe_s[1];
+    wire ext_off    = ext_s[1];
 
     // ---- 게임 코어 + 맵 ROM ----
     wire [13:0] map_addr;
@@ -85,7 +100,7 @@ module top #(
     wire [5:0]  charge;
     wire [7:0]  angle;
     wire [1:0]  state;
-    wire        facing, land, bounce, send;
+    wire        facing, land, bounce, fell, send;
 
     map_rom u_map (.clk(clk), .addr(map_addr), .data(map_data));
 
@@ -98,7 +113,7 @@ module top #(
         .map_addr(map_addr), .map_data(map_data),
         .trig_start(trig_start), .trig_sin(trig_sin), .trig_cos(trig_cos), .trig_done(trig_done),
         .x(gx), .y(gy), .screen(screen), .charge(charge), .angle(angle),
-        .state(state), .facing(facing), .land(land), .bounce(bounce), .send(send));
+        .state(state), .facing(facing), .land(land), .bounce(bounce), .fell(fell), .send(send));
 
     // ---- 삼각함수: 두 버전을 함께 돌리고 스위치로 고른다 ----
     wire signed [13:0] sin_rom, cos_rom, sin_tay, cos_tay;
@@ -124,7 +139,33 @@ module top #(
     assign led = LED_ACTIVE_LOW ? ~led_mux : led_mux;
 
     servo_pwm #(.PERIOD_US(SERVO_PERIOD_US), .MIN_US(SERVO_MIN_US), .SLOPE(SERVO_SLOPE)) u_servo (
-        .clk(clk), .rst(rst), .tick_us(tick_us), .angle(angle), .pwm(servo));
+        .clk(clk), .rst(rst), .tick_us(tick_us),
+        .angle((SERVO_REVERSE != 0) ? (ANGLE_MAX - angle) : angle), .pwm(servo));
+
+    // ---- 확장: 스테이지 번호 (1자리 7-세그먼트) ----
+    wire [6:0] stage_pat;
+    seg7_dec u_stage (.digit({1'b0, screen} + 4'd1), .blank(ext_off), .seg(stage_pat));
+    assign seg = {stage_pat, 1'b0};
+
+    // ---- 확장: 경과 시간 (8자리 7-세그먼트). 첫 차지부터 세고 클리어에서 멈춘다. 리셋 버튼으로 0 ----
+    reg timing;
+    always @(posedge clk) begin
+        if (rst || rs_rise)      timing <= 1'b0;
+        else if (state == 2'd1)  timing <= 1'b1;
+    end
+    seg_timer #(.CLK_HZ(F_CLK), .S0_IS_LEFT(SEG_S0_IS_LEFT)) u_timer (
+        .clk(clk), .rst(rst), .run(timing && state != 2'd3), .clear(rs_rise), .off(ext_off),
+        .ar_seg(ar_seg), .ar_sel(ar_sel));
+
+    // ---- 확장: 텍스트 LCD, 피에조 ----
+    lcd_taunt #(.TAUNT_FRAMES(TAUNT_FRAMES)) u_lcd (
+        .clk(clk), .rst(rst), .tick_us(tick_us), .tick(tick_game),
+        .fell(fell), .screen(screen), .cleared(state == 2'd3), .plain(ext_off),
+        .lcd_rs(lcd_rs), .lcd_rw(lcd_rw), .lcd_e(lcd_e), .lcd_d(lcd_d));
+
+    piezo_sfx u_piezo (
+        .clk(clk), .rst(rst), .tick_us(tick_us), .tick(tick_game),
+        .state(state), .charge(charge), .mute(ext_off), .piezo(piezo));
 
     // ---- 패킷 송신 ----
     wire [7:0] status = {2'b00, bounce, land, trig_mode, facing, state};

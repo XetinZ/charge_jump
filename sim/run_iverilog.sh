@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$ROOT/sim/work"
 mkdir -p "$WORK"
 cp "$ROOT"/rtl/*.mem "$ROOT"/sim/*.mem "$WORK"/
-TBS="${@:-tb_trig tb_packet tb_periph tb_physics tb_collision tb_play tb_top}"
+TBS="${@:-tb_trig tb_packet tb_periph tb_ext tb_physics tb_collision tb_play tb_top}"
 cd "$WORK"
 for tb in $TBS; do
     echo "== $tb"

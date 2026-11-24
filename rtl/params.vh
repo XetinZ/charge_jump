@@ -17,11 +17,17 @@ localparam        [5:0]  CHARGE_MAX = 6'd63;
 localparam [7:0] ANGLE_INIT   = 8'd90;
 localparam [7:0] ANGLE_MAX    = 8'd180;
 localparam [3:0] ANGLE_REPEAT = 4'd15;        // 이 프레임 수 이상 누르면 연속 이동
+// 연속 이동은 4프레임에 5도 (평균 1.25도/프레임 = 초당 75도): 4프레임째마다 2도
 
 // ---- 서보 ----
 localparam integer SERVO_PERIOD_US = 20000;   // 50Hz
 localparam integer SERVO_MIN_US    = 700;     // 0도 0.7ms (7주차 자료, HS-322HD)
 localparam integer SERVO_SLOPE     = 2276;    // 폭 = MIN + (angle*SLOPE)>>8 → 90도 1.5ms, 180도 2.3ms
+localparam integer SERVO_REVERSE   = 1;       // 1 = 서보에는 (180 - angle) 을 보낸다 (보드에서 방향이 반대였음)
+
+// ---- 확장 기능 ----
+localparam integer TAUNT_FRAMES    = 180;     // 떨어졌을 때 LCD 에 놀림 문구를 띄우는 시간 (3초)
+localparam integer SEG_S0_IS_LEFT  = 1;       // 8자리 7-세그먼트: AR_SEG_S0 이 맨 왼쪽 자리면 1
 
 // ---- 화면 ----
 localparam integer SCREEN_H_SUB = 480 * 16;   // 화면 높이 (소수 4비트 단위)

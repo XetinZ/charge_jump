@@ -42,11 +42,12 @@ module tb_physics;
         // ---- 각도 버튼: 누른 순간 1도, 15프레임 이상 누르면 프레임마다 1도 ----
         b_l = 1; do_tick; expect_eq("left: single step", angle, 91);
         repeat (14) do_tick; expect_eq("left: no repeat before 15 frames", angle, 91);
-        repeat (5) do_tick;  expect_eq("left: auto repeat", angle, 96);
+        repeat (5) do_tick;  expect_eq("left: auto repeat (1,1,1,2,1)", angle, 97);
+        repeat (8) do_tick;  expect_eq("left: 5 deg per 4 frames", angle, 107);
         b_l = 0; do_tick;
         // 틱 사이에 지나간 짧은 누름도 한 번으로 센다
         @(negedge clk) b_r_rise = 1; @(negedge clk) b_r_rise = 0;
-        do_tick; expect_eq("right: short tap", angle, 95);
+        do_tick; expect_eq("right: short tap", angle, 106);
         b_l = 1; repeat (150) do_tick; expect_eq("angle stops at 180", angle, 180);
         expect_eq("facing left", facing, 1);
         b_l = 0; b_r = 1; repeat (250) do_tick; expect_eq("angle stops at 0", angle, 0);

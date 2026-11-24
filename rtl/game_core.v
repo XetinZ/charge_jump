@@ -43,6 +43,7 @@ module game_core #(
     output wire        facing,        // 1 = 왼쪽 (각도 > 90)
     output reg         land,          // 이번 프레임에 착지
     output reg         bounce,        // 이번 프레임에 벽에 튕김
+    output reg         fell,          // 이번 프레임에 아래 화면으로 떨어짐
     output reg         send           // 갱신 완료, 패킷 송신 요청 (1클록)
 );
     `include "params.vh"
@@ -90,6 +91,12 @@ module game_core #(
     wire step_r = (btn_right && (hold_r == 0 || hold_r == ANGLE_REPEAT)) || (right_l && !btn_right && hold_r == 0);
     wire angle_inc = step_l && !step_r && (angle < ANGLE_MAX);
     wire angle_dec = step_r && !step_l && (angle > 8'd0);
+    // 연속 이동 중에는 4프레임째마다 2도 움직여 평균 1.25도/프레임
+    reg  [1:0] rep_ph;
+    wire repeating = (btn_left && hold_l == ANGLE_REPEAT) || (btn_right && hold_r == ANGLE_REPEAT);
+    wire [7:0] angle_amt  = (repeating && rep_ph == 2'd3) ? 8'd2 : 8'd1;
+    wire [7:0] angle_up   = (angle + angle_amt > ANGLE_MAX) ? ANGLE_MAX : angle + angle_amt;
+    wire [7:0] angle_down = (angle < angle_amt) ? 8'd0 : angle - angle_amt;
 
     // ---------------- 타일 조회 ----------------
     // lk_px, lk_py 에 픽셀 좌표를 넣고 P_LK 를 거치면 다음 단계에서 tile 이 유효하다.
@@ -138,6 +145,8 @@ module game_core #(
             angle  <= ANGLE_INIT;
             land   <= 1'b0;
             bounce <= 1'b0;
+            fell   <= 1'b0;
+            rep_ph <= 0;
             hold_l <= 0;
             hold_r <= 0;
             charge_l <= 1'b0; left_l <= 1'b0; right_l <= 1'b0; reset_l <= 1'b0;
@@ -149,6 +158,8 @@ module game_core #(
             P_TICK: begin
                 land   <= 1'b0;
                 bounce <= 1'b0;
+                fell   <= 1'b0;
+                rep_ph <= repeating ? rep_ph + 2'd1 : 2'd0;
                 charge_l <= 1'b0; left_l <= 1'b0; right_l <= 1'b0; reset_l <= 1'b0;
                 hold_l <= !btn_left  ? 4'd0 : (hold_l == ANGLE_REPEAT) ? hold_l : hold_l + 4'd1;
                 hold_r <= !btn_right ? 4'd0 : (hold_r == ANGLE_REPEAT) ? hold_r : hold_r + 4'd1;
@@ -165,16 +176,16 @@ module game_core #(
                     angle  <= ANGLE_INIT;
                 end else case (state)
                     ST_IDLE: begin
-                        if (angle_inc) angle <= angle + 8'd1;
-                        if (angle_dec) angle <= angle - 8'd1;
+                        if (angle_inc) angle <= angle_up;
+                        if (angle_dec) angle <= angle_down;
                         if (btn_charge || charge_l) begin
                             state  <= ST_CHARGE;
                             charge <= 0;
                         end
                     end
                     ST_CHARGE: begin
-                        if (angle_inc) angle <= angle + 8'd1;
-                        if (angle_dec) angle <= angle - 8'd1;
+                        if (angle_inc) angle <= angle_up;
+                        if (angle_dec) angle <= angle_down;
                         if (!btn_charge) begin           // 뗐다 → 점프
                             speed      <= SPEED_BASE + {1'b0, charge, 1'b0};
                             trig_start <= 1'b1;
@@ -298,6 +309,7 @@ module game_core #(
                 end else if (py >= 12'sd472 && screen != 3'd0) begin
                     screen <= screen - 3'd1;
                     y      <= y - SCREEN_H_SUB;
+                    fell   <= 1'b1;
                 end
                 phase <= P_SEND;
             end

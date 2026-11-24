@@ -17,7 +17,7 @@ wire [2:0] screen;
 wire [5:0] charge;
 wire [7:0] angle;
 wire [1:0] state;
-wire       facing, land, bounce, send;
+wire       facing, land, bounce, fell, send;
 
 map_rom  #(.MEM_FILE(MAP_FILE)) u_map  (.clk(clk), .addr(map_addr), .data(map_data));
 trig_rom u_trig (.clk(clk), .rst(rst), .start(trig_start), .angle(angle),
@@ -31,7 +31,7 @@ game_core #(.OV_NUM_SCREENS(T_NSCR), .OV_START_SCREEN(0), .OV_START_X(T_SX), .OV
     .map_addr(map_addr), .map_data(map_data),
     .trig_start(trig_start), .trig_sin(trig_sin), .trig_cos(trig_cos), .trig_done(trig_done),
     .x(gx), .y(gy), .screen(screen), .charge(charge), .angle(angle),
-    .state(state), .facing(facing), .land(land), .bounce(bounce), .send(send));
+    .state(state), .facing(facing), .land(land), .bounce(bounce), .fell(fell), .send(send));
 
 wire signed [11:0] px = gx[15:4];
 wire signed [11:0] py = gy[15:4];
