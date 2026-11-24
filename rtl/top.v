@@ -10,7 +10,9 @@
 //   dip_probe : 1 = UART 핀 확인 모드. 네 핀 모두 입력으로 두고(아무것도 구동하지 않음) LED 로 보여준다.
 //     LED1~4 = A3, A5, F6, C6 에서 신호 변화가 있으면 0.2초 켜짐,  LED5~8 = 같은 순서로 현재 레벨
 //     PC 가 보내는 동안 켜지는 핀이 PC → FPGA 방향이다. FPGA 는 같은 단자의 다른 핀으로 보내야 한다.
-//   dip_ext_off : 1 = 확장 기능 끔 (피에조 무음, 7-세그먼트 꺼짐, LCD 는 평소 문구만)
+//   dip_ext_off : 1 = 확장 기능 끔 (피에조 무음, 7-세그먼트 꺼짐, LCD 는 평소 문구만, 우주 어둠 없음)
+//   dip_cal     : 1 = CDS 보정 표시. 8자리 7-세그먼트에 [ADC 채널] . . [밝기 단계] . [값 3자리]
+//                 채널은 1.5초마다 0~7 을 돈다. 우주 스테이지의 어둠은 패킷 상태 바이트 7:6 으로 보낸다
 //
 // 확장 출력: 1자리 7-세그먼트 = 스테이지 번호, 8자리 7-세그먼트 = 경과 시간(0.01초),
 //            텍스트 LCD = 떨어졌을 때 놀림 문구, 피에조 = 차지·점프 효과음
@@ -32,6 +34,7 @@ module top #(
     input  wire       dip_uart_port,
     input  wire       dip_probe,
     input  wire       dip_ext_off,
+    input  wire       dip_cal,
     output wire [7:0] led,
     output wire       servo,
     output wire [7:0] seg,           // 1자리 7-세그먼트 {a, b, c, d, e, f, g, dp}
@@ -42,6 +45,10 @@ module top #(
     output wire       lcd_e,
     output wire [7:0] lcd_d,
     output wire       piezo,
+    output wire       adc_cs,        // AD7908 (CDS 조도 센서)
+    output wire       adc_sclk,
+    output wire       adc_din,
+    input  wire       adc_dout,
     inout  wire       uart_a3,
     inout  wire       uart_a5,
     inout  wire       uart_f6,
@@ -75,7 +82,7 @@ module top #(
         .clk(clk), .rst(rst), .in(btn_reset ^ btn_inv), .level(), .rise(rs_rise), .fall());
 
     // 딥 스위치는 2단 동기화만 한다
-    reg [1:0] trig_s, test_s, sel_s, port_s, probe_s, ext_s;
+    reg [1:0] trig_s, test_s, sel_s, port_s, probe_s, ext_s, cal_s;
     always @(posedge clk) begin
         trig_s  <= {trig_s[0],  dip_trig     ^ dip_inv};
         test_s  <= {test_s[0],  dip_test     ^ dip_inv};
@@ -83,12 +90,20 @@ module top #(
         port_s  <= {port_s[0],  dip_uart_port ^ dip_inv};
         probe_s <= {probe_s[0], dip_probe    ^ dip_inv};
         ext_s   <= {ext_s[0],   dip_ext_off  ^ dip_inv};
+        cal_s   <= {cal_s[0],   dip_cal      ^ dip_inv};
     end
     wire trig_mode  = trig_s[1];
     wire test_mode  = test_s[1];
     wire [1:0] uart_idx = {port_s[1], sel_s[1]};      // 0 A3, 1 A5, 2 F6, 3 C6
     wire probe_mode = probe_s[1];
     wire ext_off    = ext_s[1];
+    wire cal_mode   = cal_s[1];
+
+    // CDS 조도 센서 (아래 확장 부분에서 연결)
+    wire [1:0] dark;
+    wire [2:0] cal_ch;
+    wire [7:0] cal_val;
+    wire [1:0] light_lvl;
 
     // ---- 게임 코어 + 맵 ROM ----
     wire [13:0] map_addr;
@@ -154,8 +169,17 @@ module top #(
         else if (state == 2'd1)  timing <= 1'b1;
     end
     seg_timer #(.CLK_HZ(F_CLK), .S0_IS_LEFT(SEG_S0_IS_LEFT)) u_timer (
-        .clk(clk), .rst(rst), .run(timing && state != 2'd3), .clear(rs_rise), .off(ext_off),
+        .clk(clk), .rst(rst), .run(timing && state != 2'd3), .clear(rs_rise), .off(ext_off && !cal_mode),
+        .cal(cal_mode), .cal_ch(cal_ch), .cal_lvl(light_lvl), .cal_val(cal_val),
         .ar_seg(ar_seg), .ar_sel(ar_sel));
+
+    // ---- 확장: 우주 스테이지 어둠 (CDS 조도 센서) ----
+    cds_light #(.TICK_HZ(TICK_HZ), .LIGHT_CH(LIGHT_CH), .LIGHT_INV(LIGHT_INV),
+                .T1(LIGHT_T1), .T2(LIGHT_T2), .T3(LIGHT_T3), .HYST(LIGHT_HYST),
+                .DARK_SCREEN(DARK_SCREEN)) u_cds (
+        .clk(clk), .rst(rst), .tick(tick_game), .screen(screen), .enable(!ext_off),
+        .adc_cs(adc_cs), .adc_sclk(adc_sclk), .adc_din(adc_din), .adc_dout(adc_dout),
+        .dark(dark), .cal_ch(cal_ch), .cal_val(cal_val), .light_val(), .level(light_lvl));
 
     // ---- 확장: 텍스트 LCD, 피에조 ----
     lcd_taunt #(.TAUNT_FRAMES(TAUNT_FRAMES)) u_lcd (
@@ -168,7 +192,7 @@ module top #(
         .state(state), .charge(charge), .mute(ext_off), .piezo(piezo));
 
     // ---- 패킷 송신 ----
-    wire [7:0] status = {2'b00, bounce, land, trig_mode, facing, state};
+    wire [7:0] status = {dark, bounce, land, trig_mode, facing, state};
     wire [7:0] tx_data;
     wire       tx_valid, tx_ready, uart_txd;
 

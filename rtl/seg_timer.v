@@ -9,6 +9,11 @@ module seg_timer #(
     input  wire       run,
     input  wire       clear,
     input  wire       off,                    // 1 = 표시 끔
+    // 보정 표시 (cal = 1): 맨 왼쪽 = ADC 채널, 왼쪽 4번째 = 밝기 단계, 오른쪽 3자리 = 값
+    input  wire       cal,
+    input  wire [2:0] cal_ch,
+    input  wire [1:0] cal_lvl,
+    input  wire [7:0] cal_val,
     output reg  [7:0] ar_seg,                 // {a, b, c, d, e, f, g, dp}, 1 = 켜짐
     output reg  [7:0] ar_sel                  // 자리 선택, 0 = 선택
 );
@@ -53,8 +58,26 @@ module seg_timer #(
             if (k >= idx && d[k] != 4'd0) blank = 1'b0;
     end
 
+    // 보정 표시 내용
+    wire [3:0] v100 = cal_val / 8'd100;
+    wire [3:0] v10  = (cal_val / 8'd10) % 8'd10;
+    wire [3:0] v1   = cal_val % 8'd10;
+    reg  [3:0] cdig;
+    reg        cblank;
+    always @(*) begin
+        cblank = 1'b0;
+        case (idx)
+            3'd7: cdig = {1'b0, cal_ch};
+            3'd4: cdig = {2'b00, cal_lvl};
+            3'd2: begin cdig = v100; cblank = (v100 == 0); end
+            3'd1: begin cdig = v10;  cblank = (v100 == 0 && v10 == 0); end
+            3'd0: cdig = v1;
+            default: begin cdig = 4'd0; cblank = 1'b1; end
+        endcase
+    end
+
     wire [6:0] pat;
-    seg7_dec u_dec (.digit(d[idx]), .blank(blank), .seg(pat));
+    seg7_dec u_dec (.digit(cal ? cdig : d[idx]), .blank(cal ? cblank : blank), .seg(pat));
     wire [2:0] sel_bit = (S0_IS_LEFT != 0) ? (3'd7 - idx) : idx;
 
     always @(posedge clk) begin
@@ -69,7 +92,7 @@ module seg_timer #(
                 idx      <= idx + 3'd1;
             end else
                 scan_cnt <= scan_cnt + 1'b1;
-            ar_seg <= off ? 8'h00 : {pat, (idx == 3'd2)};       // 소수점은 1초 자리 뒤
+            ar_seg <= off ? 8'h00 : {pat, (idx == 3'd2) && !cal};   // 소수점은 1초 자리 뒤
             ar_sel <= off ? 8'hFF : ~(8'h01 << sel_bit);
         end
     end

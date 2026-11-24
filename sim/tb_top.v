@@ -39,7 +39,8 @@ module tb_top;
         .clk(clk), .btn_charge(btn_charge), .btn_left(btn_left), .btn_right(btn_right),
         .btn_reset(btn_reset), .dip_trig(dip_trig), .dip_test(dip_test),
         .dip_uart_sel(dip_uart_sel), .dip_uart_port(dip_uart_port), .dip_probe(dip_probe),
-        .dip_ext_off(1'b0), .seg(), .ar_seg(), .ar_sel(), .lcd_rs(), .lcd_rw(), .lcd_e(), .lcd_d(), .piezo(),
+        .dip_ext_off(1'b0), .dip_cal(1'b0), .seg(), .ar_seg(), .ar_sel(), .lcd_rs(), .lcd_rw(), .lcd_e(), .lcd_d(), .piezo(),
+        .adc_cs(), .adc_sclk(), .adc_din(), .adc_dout(1'b0),
         .led(led), .servo(servo),
         .uart_a3(uart_a3), .uart_a5(uart_a5), .uart_f6(uart_f6), .uart_c6(uart_c6));
 

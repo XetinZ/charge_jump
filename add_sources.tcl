@@ -27,7 +27,7 @@ add_new constrs_1 [list $root/constrs/charge_jump.xdc]
 
 # 시뮬레이션
 add_new sim_1 [concat [glob $root/sim/tb_*.v] \
-    [list $root/sim/tb_harness.vh $root/sim/test_map.mem]]
+    [list $root/sim/ad7908_model.v $root/sim/tb_harness.vh $root/sim/test_map.mem]]
 set_property file_type {Verilog Header} [get_files $root/sim/tb_harness.vh]
 set_property include_dirs [list $root/rtl $root/sim] [get_filesets sim_1]
 set_property top tb_physics [get_filesets sim_1]

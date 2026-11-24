@@ -9,6 +9,6 @@ TBS="${@:-tb_trig tb_packet tb_periph tb_ext tb_physics tb_collision tb_play tb_
 cd "$WORK"
 for tb in $TBS; do
     echo "== $tb"
-    iverilog -g2005 -I "$ROOT/rtl" -I "$ROOT/sim" -s "$tb" -o "$tb.vvp" "$ROOT/sim/$tb.v" "$ROOT"/rtl/*.v
+    iverilog -g2005 -I "$ROOT/rtl" -I "$ROOT/sim" -s "$tb" -o "$tb.vvp" "$ROOT/sim/$tb.v" "$ROOT/sim/ad7908_model.v" "$ROOT"/rtl/*.v
     vvp "$tb.vvp" | grep -v '\$finish'
 done

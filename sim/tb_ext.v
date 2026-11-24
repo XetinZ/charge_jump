@@ -15,10 +15,11 @@ module tb_ext;
 
     // ================= seg_timer =================
     localparam integer T_CLK = 100_000;          // 0.01초 = 1000클록
-    reg run = 0, clear = 0, off = 0;
+    reg run = 0, clear = 0, off = 0, t_cal = 0;
     wire [7:0] ar_seg, ar_sel;
     seg_timer #(.CLK_HZ(T_CLK), .S0_IS_LEFT(1)) u_timer (
-        .clk(clk), .rst(rst), .run(run), .clear(clear), .off(off), .ar_seg(ar_seg), .ar_sel(ar_sel));
+        .clk(clk), .rst(rst), .run(run), .clear(clear), .off(off),
+        .cal(t_cal), .cal_ch(3'd5), .cal_lvl(2'd2), .cal_val(8'd137), .ar_seg(ar_seg), .ar_sel(ar_sel));
 
     // 스캔을 받아 왼쪽부터 8자리의 패턴을 모은다 (S0 = 맨 왼쪽)
     reg [7:0] shown [0:7];
@@ -117,8 +118,60 @@ module tb_ext;
         end
     endtask
 
+    // ================= cds_light + AD7908 =================
+    wire adc_cs, adc_sclk, adc_din, adc_dout;
+    reg  [7:0] vin [0:7];
+    reg  [2:0] l_screen = 0;
+    reg        l_en = 1;
+    wire [1:0] dark, lvl;
+    wire [2:0] cal_ch;
+    wire [7:0] cal_val, light_val;
+    ad7908_model u_adc (.cs(adc_cs), .sclk(adc_sclk), .din(adc_din), .dout(adc_dout),
+        .vin0(vin[0]), .vin1(vin[1]), .vin2(vin[2]), .vin3(vin[3]),
+        .vin4(vin[4]), .vin5(vin[5]), .vin6(vin[6]), .vin7(vin[7]));
+    cds_light #(.TICK_HZ(60), .LIGHT_CH(5), .LIGHT_INV(0), .T1(64), .T2(128), .T3(192), .HYST(6),
+                .DARK_SCREEN(2)) u_cds (
+        .clk(clk), .rst(rst), .tick(tick), .screen(l_screen), .enable(l_en),
+        .adc_cs(adc_cs), .adc_sclk(adc_sclk), .adc_din(adc_din), .adc_dout(adc_dout),
+        .dark(dark), .cal_ch(cal_ch), .cal_val(cal_val), .light_val(light_val), .level(lvl));
+    task set_light; input [7:0] x; begin vin[5] = x; repeat (2000) @(negedge clk); do_tick; do_tick; end endtask
+
     initial begin
+        for (i = 0; i < 8; i = i + 1) vin[i] = 8'd10 + 8'd20 * i;
         repeat (4) @(negedge clk); rst = 0;
+
+        // ---- ADC: 8채널을 모두 읽어 제 자리에 넣는다 ----
+        repeat (3000) @(negedge clk);
+        expect_eq("adc: ch0", u_cds.val[0], 10);
+        expect_eq("adc: ch3", u_cds.val[3], 70);
+        expect_eq("adc: ch7", u_cds.val[7], 150);
+        expect_eq("adc: light channel (5)", light_val, 110);
+        expect_eq("adc: control word as intended", u_adc.bad_ctrl, 0);
+        expect_eq("adc: power-up frames done", u_adc.ones_frames, 2);
+        expect_eq("adc: CS falls while SCLK high", u_adc.cs_while_sclk_low, 0);
+        vin[3] = 8'd201; repeat (1000) @(negedge clk);
+        expect_eq("adc: follows a changed input", u_cds.val[3], 201);
+
+        // ---- 밝기 단계와 어둠: 우주(화면 2)에서만 ----
+        set_light(250); expect_eq("bright: level 3", lvl, 3); expect_eq("bright: dark 0", dark, 0);
+        l_screen = 2; set_light(250); expect_eq("space bright: dark 0", dark, 0);
+        set_light(150); expect_eq("space 150: dark 1", dark, 1);
+        set_light(100); expect_eq("space 100: dark 2", dark, 2);
+        set_light(20);  expect_eq("space 20: dark 3", dark, 3);
+        set_light(66);  expect_eq("hysteresis: 66 stays dark 3", dark, 3);
+        set_light(72);  expect_eq("hysteresis: 72 goes dark 2", dark, 2);
+        set_light(60);  expect_eq("hysteresis: 60 stays dark 2", dark, 2);
+        set_light(55);  expect_eq("hysteresis: 55 goes dark 3", dark, 3);
+        l_screen = 1; do_tick; repeat (3) @(negedge clk);
+        expect_eq("other screen: dark 0", dark, 0);
+        l_screen = 2; l_en = 0; do_tick; repeat (3) @(negedge clk);
+        expect_eq("ext off: dark 0", dark, 0);
+        l_en = 1; l_screen = 0;
+        // 보정 표시: 1.5초(90틱)마다 채널이 바뀐다
+        expect_eq("cal: starts at ch0... value", cal_val, u_cds.val[cal_ch]);
+        i = cal_ch; repeat (90) do_tick;
+        expect_eq("cal: next channel after 90 ticks", cal_ch, (i + 1) % 8);
+
 
         // ---- 타이머: 0.00 → 12.34 → 멈춤 → 지움, 앞자리 0 은 꺼짐 ----
         expect_display(-1, -1, -1, -1, -1, 0, 0, 0);
@@ -128,6 +181,15 @@ module tb_ext;
         off = 1; repeat (2000) @(negedge clk);
         expect_eq("timer off: no digit selected", ar_sel, 8'hFF);
         off = 0;
+        // 보정 표시: [채널 5] . . [단계 2] . [137]
+        t_cal = 1; repeat (2000) @(negedge clk);
+        expect_eq("cal display: ch", digit_of(shown[0]), 5);
+        expect_eq("cal display: level", digit_of(shown[3]), 2);
+        expect_eq("cal display: value hundreds", digit_of(shown[5]), 1);
+        expect_eq("cal display: value tens", digit_of(shown[6]), 3);
+        expect_eq("cal display: value ones", digit_of(shown[7]), 7);
+        expect_eq("cal display: blanks", {digit_of(shown[1]), digit_of(shown[2]), digit_of(shown[4])} == {-32'sd1, -32'sd1, -32'sd1}, 1);
+        t_cal = 0;
         @(negedge clk) clear = 1; @(negedge clk) clear = 0;
         expect_display(-1, -1, -1, -1, -1, 0, 0, 0);
         expect_eq("one digit selected at a time", sel_errors, 0);

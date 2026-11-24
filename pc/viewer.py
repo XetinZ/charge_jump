@@ -18,6 +18,9 @@ from pathlib import Path
 HEADER = b"\xAA\x55"
 PKT_LEN = 11
 STATE_NAMES = ("IDLE", "CHARGE", "AIR", "CLEAR")
+# 상태 바이트 7:6 = 어둠 단계 (FPGA 가 CDS 센서로 정함). 0 = 덮지 않음, 1~3 = 캐릭터 주변 이 반지름만 보임
+DARK_RADIUS = (None, 120, 56, 24)
+DARK_ALPHA = 245
 
 HUD_H = 40
 BG, WALL, WALL_EDGE, GOAL = (18, 20, 32), (92, 104, 128), (130, 144, 172), (250, 204, 60)
@@ -71,6 +74,20 @@ def draw_map(pg, surf, rows, tile):
                 pg.draw.rect(surf, GOAL, r.inflate(-4, -4), border_radius=3)
 
 
+def make_dark_masks(pg, w, h):
+    """어둠 단계별로 가운데에 구멍이 뚫린 덮개를 미리 만든다. 캐릭터 중심에 덮개 중심을 맞춰 그린다."""
+    masks = [None]
+    for r in DARK_RADIUS[1:]:
+        m = pg.Surface((w * 2, h * 2), pg.SRCALPHA)
+        m.fill((0, 0, 0, DARK_ALPHA))
+        steps = 8                                   # 가장자리를 부드럽게
+        for i in range(steps, -1, -1):
+            rr = int(r * (1 + 0.5 * i / steps))
+            pg.draw.circle(m, (0, 0, 0, int(DARK_ALPHA * i / steps)), (w, h), rr)
+        masks.append(m)
+    return masks
+
+
 def make_sprite(pg, tile):
     """16x16 캐릭터 (오른쪽을 보는 모양). 왼쪽은 좌우 반전해서 쓴다."""
     s = pg.Surface((tile, tile), pg.SRCALPHA)
@@ -110,6 +127,7 @@ def main():
     big = pg.font.Font(None, 72)
     sprite_r = make_sprite(pg, tile)
     sprite_l = pg.transform.flip(sprite_r, True, False)
+    dark_masks = make_dark_masks(pg, w, h)
     map_surfs = []
     for rows in m["screens"]:
         s = pg.Surface((w, h))
@@ -149,6 +167,7 @@ def main():
         else:
             x, y, screen, charge, angle, status = last
             state, left, taylor = status & 3, bool(status & 4), bool(status & 8)
+            dark = (status >> 6) & 3
             if screen < len(map_surfs):
                 canvas.blit(map_surfs[screen], (0, 0))
             canvas.blit(sprite_l if left else sprite_r, (x, y))
@@ -162,6 +181,13 @@ def main():
                 pg.draw.line(canvas, ARROW, (cx, cy), (ex, ey), 2)
                 pg.draw.circle(canvas, ARROW, (int(ex), int(ey)), 3)
 
+            # 어둠 (FPGA 가 정한 단계를 그대로 그린다)
+            if dark:
+                cx, cy = x + tile // 2, y + tile // 2
+                canvas.set_clip(pg.Rect(0, 0, w, h))
+                canvas.blit(dark_masks[dark], (cx - w, cy - h))
+                canvas.set_clip(None)
+
             if state == 3:
                 t = big.render("CLEAR!", True, GOAL)
                 canvas.blit(t, t.get_rect(center=(w // 2, h // 2)))
@@ -171,7 +197,7 @@ def main():
             pg.draw.rect(canvas, DIM, (12, h + 12, 130, 16), 1)
             pg.draw.rect(canvas, GOAL if charge == 63 else BODY, (14, h + 14, charge * 2, 12))
             hud = (f"ANGLE {angle:3d}   {STATE_NAMES[state]:6s}  SCREEN {screen}   "
-                   f"TRIG {'TAYLOR' if taylor else 'ROM'}")
+                   f"TRIG {'TAYLOR' if taylor else 'ROM'}" + (f"   DARK {dark}" if dark else ""))
             canvas.blit(font.render(hud, True, TEXT), (156, h + 13))
             stale = time.time() - last_time > 0.5
             stat = f"ok {parser.good}  bad {parser.bad}" + ("  NO SIGNAL" if stale else "")

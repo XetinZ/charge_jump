@@ -22,6 +22,7 @@ set_property -dict {PACKAGE_PIN U2 IOSTANDARD LVCMOS33} [get_ports dip_uart_sel]
 set_property -dict {PACKAGE_PIN T1 IOSTANDARD LVCMOS33} [get_ports dip_probe]     ;# DIP_SW4: 1 UART 핀 확인 모드
 set_property -dict {PACKAGE_PIN W4 IOSTANDARD LVCMOS33} [get_ports dip_uart_port] ;# DIP_SW5: 단자 0 9핀 시리얼 / 1 USB
 set_property -dict {PACKAGE_PIN W1 IOSTANDARD LVCMOS33} [get_ports dip_ext_off]   ;# DIP_SW6: 1 확장 기능 끔
+set_property -dict {PACKAGE_PIN V4 IOSTANDARD LVCMOS33} [get_ports dip_cal]       ;# DIP_SW7: 1 CDS 보정 표시
 
 ## ---- LED 8개: High 면 켜짐 (2주차 자료). led[0] = LED1 이 게이지의 첫 칸 ----
 set_property -dict {PACKAGE_PIN L4 IOSTANDARD LVCMOS33} [get_ports {led[0]}]
@@ -90,6 +91,13 @@ set_property -dict {PACKAGE_PIN D6 IOSTANDARD LVCMOS33} [get_ports lcd_rw]  ;# T
 
 ## ---- 확장: 피에조 (보드의 PIEZO ENABLE 스위치가 ON 이어야 소리가 난다) ----
 set_property -dict {PACKAGE_PIN Y21 IOSTANDARD LVCMOS33} [get_ports piezo]
+
+## ---- 확장: ADC AD7908 (CDS 조도 센서). 핀맵의 DIN/DOUT 은 칩 기준 이름으로 본다 ----
+## 보정 표시에서 모든 채널이 0 이나 255 로만 나오면 adc_din 과 adc_dout 의 핀을 서로 바꿔 본다.
+set_property -dict {PACKAGE_PIN H3 IOSTANDARD LVCMOS33} [get_ports adc_cs]    ;# SPI_AD
+set_property -dict {PACKAGE_PIN H7 IOSTANDARD LVCMOS33} [get_ports adc_sclk]  ;# SPI_SCK
+set_property -dict {PACKAGE_PIN H5 IOSTANDARD LVCMOS33} [get_ports adc_din]   ;# SPI_DIN  (칩의 입력)
+set_property -dict {PACKAGE_PIN J6 IOSTANDARD LVCMOS33} [get_ports adc_dout]  ;# SPI_DOUT (칩의 출력)
 
 ## 버튼·스위치는 비동기 입력이므로 타이밍 분석에서 제외
 set_false_path -from [get_ports {btn_* dip_*}]

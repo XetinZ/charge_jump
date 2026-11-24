@@ -29,6 +29,16 @@ localparam integer SERVO_REVERSE   = 1;       // 1 = 서보에는 (180 - angle) 
 localparam integer TAUNT_FRAMES    = 180;     // 떨어졌을 때 LCD 에 놀림 문구를 띄우는 시간 (3초)
 localparam integer SEG_S0_IS_LEFT  = 1;       // 8자리 7-세그먼트: AR_SEG_S0 이 맨 왼쪽 자리면 1
 
+// ---- 우주 스테이지 어둠 기믹 (CDS 조도 센서, ADC AD7908) ----
+// 보정 모드(DIP_SW7)에서 8자리 7-세그먼트에 채널별 값이 나온다. CDS 를 가렸다 비췄다 하며 값이 크게 바뀌는 채널을 찾는다
+localparam integer DARK_SCREEN = 2;           // 어둠 기믹을 쓰는 화면 (우주)
+localparam integer LIGHT_CH    = 0;           // CDS 가 연결된 ADC 채널 (보드에서 확인 후 고칠 것)
+localparam integer LIGHT_INV   = 0;           // 밝을수록 값이 작아지면 1
+localparam integer LIGHT_T1    = 64;          // (반전 적용 후) 이 값 미만이면 가장 어둡게 (어둠 3)
+localparam integer LIGHT_T2    = 128;         //                이 값 미만이면 어둠 2
+localparam integer LIGHT_T3    = 192;         //                이 값 미만이면 어둠 1, 이상이면 밝음
+localparam integer LIGHT_HYST  = 6;
+
 // ---- 화면 ----
 localparam integer SCREEN_H_SUB = 480 * 16;   // 화면 높이 (소수 4비트 단위)
 
