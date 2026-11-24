@@ -9,26 +9,38 @@ module tb_top;
     always #5 clk = ~clk;
 
     reg btn_charge = 0, btn_left = 0, btn_right = 0, btn_reset = 0, dip_trig = 0, dip_test = 1;
-    reg dip_uart_sel = 0, dip_probe = 0;
+    reg dip_uart_sel = 0, dip_uart_port = 0, dip_probe = 0;
     wire [7:0] led;
     wire servo;
-    wire uart_f6, uart_c6;
-    // PC 쪽(USB 칩) 흉내: 확인 모드 시험에서만 C6 을 구동한다
-    reg c6_drv_en = 0, c6_drv = 1;
-    assign uart_c6 = c6_drv_en ? c6_drv : 1'bz;
-    pullup (uart_f6);                           // XDC 의 PULLUP 과 같게
+    wire uart_a3, uart_a5, uart_f6, uart_c6;
+    // PC 쪽(시리얼 칩) 흉내: 확인 모드 시험에서만 핀을 구동한다
+    reg [3:0] pc_en = 4'b0000;
+    reg       pc_drv = 1'b1;
+    assign uart_a3 = pc_en[0] ? pc_drv : 1'bz;
+    assign uart_a5 = pc_en[1] ? pc_drv : 1'bz;
+    assign uart_f6 = pc_en[2] ? pc_drv : 1'bz;
+    assign uart_c6 = pc_en[3] ? pc_drv : 1'bz;
+    pullup (uart_a3);                           // XDC 의 PULLUP 과 같게
+    pullup (uart_a5);
+    pullup (uart_f6);
     pullup (uart_c6);
-    integer f6_low_while_c6 = 0;                // C6 로 보내는 동안 F6 이 0 으로 내려간 횟수 (0 이어야 함)
-    always @(negedge uart_f6) if (dip_uart_sel) f6_low_while_c6 = f6_low_while_c6 + 1;
-    // 수신기는 FPGA 가 고른 송신 핀을 본다 (High-Z 면 정지 상태 1)
-    wire txd_raw = dip_uart_sel ? uart_c6 : uart_f6;
-    wire txd = txd_raw;
+    wire [3:0] pins = {uart_c6, uart_f6, uart_a5, uart_a3};
+    wire [1:0] uart_idx = {dip_uart_port, dip_uart_sel};   // 0 A3, 1 A5, 2 F6, 3 C6
+    // 수신기는 FPGA 가 고른 송신 핀을 본다
+    wire txd = pins[uart_idx];
+    // 고르지 않은 핀이 0 으로 내려간 횟수 (FPGA 가 구동하면 안 됨, 0 이어야 함)
+    integer other_low = 0;
+    always @(negedge uart_a3) if (uart_idx != 0 && !pc_en[0]) other_low = other_low + 1;
+    always @(negedge uart_a5) if (uart_idx != 1 && !pc_en[1]) other_low = other_low + 1;
+    always @(negedge uart_f6) if (uart_idx != 2 && !pc_en[2]) other_low = other_low + 1;
+    always @(negedge uart_c6) if (uart_idx != 3 && !pc_en[3]) other_low = other_low + 1;
 
     top #(.CLK_HZ_OVERRIDE(F)) dut (
         .clk(clk), .btn_charge(btn_charge), .btn_left(btn_left), .btn_right(btn_right),
         .btn_reset(btn_reset), .dip_trig(dip_trig), .dip_test(dip_test),
-        .dip_uart_sel(dip_uart_sel), .dip_probe(dip_probe),
-        .led(led), .servo(servo), .uart_f6(uart_f6), .uart_c6(uart_c6));
+        .dip_uart_sel(dip_uart_sel), .dip_uart_port(dip_uart_port), .dip_probe(dip_probe),
+        .led(led), .servo(servo),
+        .uart_a3(uart_a3), .uart_a5(uart_a5), .uart_f6(uart_f6), .uart_c6(uart_c6));
 
     integer errors = 0, checks = 0;
     task expect_eq;
@@ -81,7 +93,7 @@ module tb_top;
     task wait_pkts; input integer n; begin repeat (n) @(pkt_ev); end endtask
 
 
-    integer guard, start_x, start_y, pk0;
+    integer guard, start_x, start_y, pk0, ps;
 
     initial begin
         // ---- 1. 고정 패킷 모드 ----
@@ -159,27 +171,30 @@ module tb_top;
         pk0 = npkt; #(10 * (F / 60) * 10);               // 10 프레임 (클록 주기 10ns)
         expect_eq("one packet per frame", (npkt - pk0) >= 9 && (npkt - pk0) <= 11, 1);
 
-        // ---- 8. UART 핀 선택: C6 으로 송신, F6 은 High-Z ----
-        wait (!dut.u_pkt.busy); dip_uart_sel = 1; #(10 * 20);
-        expect_eq("sel=1: F6 released (pulled up)", dut.uart_f6 === 1'b1 && !(!dut.probe_mode && !dut.uart_sel), 1);
-        pk0 = npkt; wait_pkts(3);
-        expect_eq("sel=1: packets on C6", npkt - pk0, 3);
-        expect_eq("sel=1: no bad packets", nbad, 0);
-        expect_eq("sel=1: F6 stays idle (not driven)", f6_low_while_c6, 0);
+        // ---- 8. UART 핀 선택: 기본(A3) 다음 A5, F6, C6 순서로 바꿔 가며 패킷이 그 핀으로만 나가는지 ----
+        for (ps = 1; ps < 4; ps = ps + 1) begin
+            wait (!dut.u_pkt.busy);
+            {dip_uart_port, dip_uart_sel} = ps;
+            #(10 * 20);
+            pk0 = npkt; wait_pkts(3);
+            expect_eq("selected pin carries packets", npkt - pk0, 3);
+        end
+        expect_eq("pin select: no bad packets", nbad, 0);
+        expect_eq("pin select: other pins never driven", other_low, 0);
 
-        // ---- 9. 확인 모드: 두 핀 모두 High-Z, PC 신호가 들어오는 핀의 LED 가 켜짐 ----
+        // ---- 9. 확인 모드: 네 핀 모두 High-Z, PC 신호가 들어오는 핀(A5)의 LED 만 켜짐 ----
+        wait (!dut.u_pkt.busy);
+        {dip_uart_port, dip_uart_sel} = 0;
         dip_probe = 1; #(10 * (F / 4));                  // 0.25초: 앞 단계 송신의 LED 표시가 꺼지기를 기다림
-        expect_eq("probe: FPGA drives neither pin", dut.probe_mode, 1);
-        expect_eq("probe: both pins idle high", {uart_f6, uart_c6}, 2'b11);
-        expect_eq("probe: no activity before PC sends", led[1:0], 0);
-        c6_drv_en = 1;
-        repeat (20) begin c6_drv = 0; #(10 * 52); c6_drv = 1; #(10 * 52); end
-        expect_eq("probe: LED2 (C6 activity) on", led[1], 1);
-        expect_eq("probe: LED1 (F6 activity) off", led[0], 0);
-        expect_eq("probe: LED8 = C6 level", led[7], 1);
+        expect_eq("probe: FPGA drives no pin", dut.drive, 0);
+        expect_eq("probe: LED5-8 = all pins idle high", led[7:4], 4'b1111);
+        expect_eq("probe: no activity before PC sends", led[3:0], 0);
+        pc_en = 4'b0010;                                 // PC 가 9핀 시리얼로 보냄 → A5
+        repeat (20) begin pc_drv = 0; #(10 * 52); pc_drv = 1; #(10 * 52); end
+        expect_eq("probe: only LED2 (A5) on", led[3:0], 4'b0010);
         #(10 * (F / 5) + 10 * 1000);
-        expect_eq("probe: LED2 off after 0.2s idle", led[1], 0);
-        c6_drv_en = 0; dip_probe = 0; dip_uart_sel = 0;
+        expect_eq("probe: LED2 off after 0.2s idle", led[3:0], 0);
+        pc_en = 0; dip_probe = 0;
 
         if (errors == 0) $display("PASS (%0d checks, %0d packets)", checks, npkt);
         else             $display("FAILED: %0d errors", errors);

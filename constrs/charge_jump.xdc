@@ -18,8 +18,9 @@ set_property -dict {PACKAGE_PIN N1 IOSTANDARD LVCMOS33} [get_ports btn_reset]   
 ## ---- 딥 스위치: 위로 올리면 High (2주차 자료) ----
 set_property -dict {PACKAGE_PIN Y1 IOSTANDARD LVCMOS33} [get_ports dip_trig]    ;# DIP_SW1: 0 ROM / 1 테일러
 set_property -dict {PACKAGE_PIN W3 IOSTANDARD LVCMOS33} [get_ports dip_test]    ;# DIP_SW2: 1 고정 패킷
-set_property -dict {PACKAGE_PIN U2 IOSTANDARD LVCMOS33} [get_ports dip_uart_sel] ;# DIP_SW3: UART 송신 핀 0 F6 / 1 C6
-set_property -dict {PACKAGE_PIN T1 IOSTANDARD LVCMOS33} [get_ports dip_probe]    ;# DIP_SW4: 1 UART 핀 확인 모드
+set_property -dict {PACKAGE_PIN U2 IOSTANDARD LVCMOS33} [get_ports dip_uart_sel]  ;# DIP_SW3: 단자 안의 핀 0 TXD쪽 / 1 RXD쪽
+set_property -dict {PACKAGE_PIN T1 IOSTANDARD LVCMOS33} [get_ports dip_probe]     ;# DIP_SW4: 1 UART 핀 확인 모드
+set_property -dict {PACKAGE_PIN W4 IOSTANDARD LVCMOS33} [get_ports dip_uart_port] ;# DIP_SW5: 단자 0 9핀 시리얼 / 1 USB
 
 ## ---- LED 8개: High 면 켜짐 (2주차 자료). led[0] = LED1 이 게이지의 첫 칸 ----
 set_property -dict {PACKAGE_PIN L4 IOSTANDARD LVCMOS33} [get_ports {led[0]}]
@@ -34,11 +35,13 @@ set_property -dict {PACKAGE_PIN N5 IOSTANDARD LVCMOS33} [get_ports {led[7]}]
 ## ---- 서보 PWM: SERVO_CTRL (7주차 자료와 같음) ----
 set_property -dict {PACKAGE_PIN AA22 IOSTANDARD LVCMOS33} [get_ports servo]
 
-## ---- UART: USB to Serial 의 두 핀 ----
-## 핀맵 이름(USB_TXD0 / USB_RXD0)이 FPGA 기준인지 USB 칩 기준인지 확인되지 않아 두 핀을 다 잡고,
-## DIP_SW3 으로 송신 핀을 고른다. 고르지 않은 핀은 입력(High-Z)이다. DIP_SW4 를 올리면 둘 다 입력이 되고
-## LED 로 어느 핀에 PC 신호가 들어오는지 보여준다 (pc/uart_probe.py). 별도 UART 커넥터는 UART_TXD1 = A3.
+## ---- UART: 9핀 시리얼 단자(A3, A5)와 USB 시리얼(F6, C6) ----
+## 핀맵 이름(TXD/RXD)이 FPGA 기준인지 칩 기준인지 확인되지 않아 네 핀을 다 잡고 딥 스위치로 송신 핀을 고른다.
+## DIP_SW5 = 단자 (0 9핀 시리얼, 1 USB), DIP_SW3 = 그 단자의 핀 (0 TXD 이름 핀, 1 RXD 이름 핀). 기본은 A3.
+## 고르지 않은 핀은 입력(High-Z). DIP_SW4 를 올리면 넷 다 입력이 되고 LED 로 PC 신호가 들어오는 핀을 보여준다.
 ## 풀업: 입력으로 둔 핀이 떠서 잡음으로 깜빡이지 않게 한다 (칩 출력이 연결된 쪽은 칩이 이긴다)
+set_property -dict {PACKAGE_PIN A3 IOSTANDARD LVCMOS33 PULLUP true} [get_ports uart_a3]     ;# UART_TXD1
+set_property -dict {PACKAGE_PIN A5 IOSTANDARD LVCMOS33 PULLUP true} [get_ports uart_a5]     ;# UART_RXD1
 set_property -dict {PACKAGE_PIN F6 IOSTANDARD LVCMOS33 PULLUP true} [get_ports uart_f6]     ;# USB_TXD0
 set_property -dict {PACKAGE_PIN C6 IOSTANDARD LVCMOS33 PULLUP true} [get_ports uart_c6]     ;# USB_RXD0
 
