@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
-"""차지 점프 뷰어 — FPGA 가 UART 로 보낸 상태를 그대로 그리기만 한다.
+r"""차지 점프 뷰어 — FPGA 가 UART 로 보낸 상태를 그대로 그리기만 한다.
 
 게임 로직(위치·속도·충돌 계산, 보간, 예측)은 넣지 않는다. 패킷이 없거나 깨진 프레임에서는
 마지막으로 받은 값을 다시 그린다.
 
-사용:  python viewer.py COM3
-       python viewer.py COM3 --csv log.csv
+사용:  py pc\viewer.py COM3
+       py pc\viewer.py COM3 --csv log.csv
 필요:  pip install pygame pyserial
 """
 import argparse
@@ -30,10 +29,12 @@ class PacketParser:
 
     def __init__(self):
         self.buf = bytearray()
+        self.nbytes = 0                                 # 받은 바이트 수 (통신 진단용)
         self.good = 0
         self.bad = 0
 
     def feed(self, data):
+        self.nbytes += len(data)
         self.buf += data
         out = []
         while True:
@@ -137,6 +138,14 @@ def main():
         canvas.fill(BG)
         if last is None:
             canvas.blit(font.render(f"waiting for packets on {a.port} @ {a.baud} ...", True, DIM), (16, 16))
+            # 진단: 바이트가 전혀 안 오면 핀·포트 문제, 오는데 패킷이 안 맞으면 클록·속도 문제
+            diag = f"bytes received {parser.nbytes}   bad packets {parser.bad}"
+            canvas.blit(font.render(diag, True, BODY if parser.nbytes else DIM), (16, 40))
+            if parser.nbytes == 0:
+                hint = "no bytes: check bitstream, DIP3 (UART pin F6/C6), cable"
+            else:
+                hint = "bytes but no packet: check CLOCK SELECT = 1MHz and --baud"
+            canvas.blit(font.render(hint, True, DIM), (16, 64))
         else:
             x, y, screen, charge, angle, status = last
             state, left, taylor = status & 3, bool(status & 4), bool(status & 8)

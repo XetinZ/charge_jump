@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """sin 표(sin.mem) 생성 + 테일러 급수 오차 비교 (보고서용).
 
 사용:  python tools/make_trig.py                 # rtl/sin.mem 생성, 오차 표 출력

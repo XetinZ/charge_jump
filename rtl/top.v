@@ -1,6 +1,10 @@
 // top.v — 핀 연결, 모듈 배선, 딥 스위치 옵션.
 //   dip_trig : 0 = ROM 표, 1 = 테일러 급수
 //   dip_test : 1 = 고정 값 패킷을 매 프레임 송신 (통신 시험용, 명세 8장)
+//   dip_uart_sel : UART 송신 핀. 0 = F6 (USB_TXD0), 1 = C6 (USB_RXD0). 고르지 않은 핀은 입력(High-Z)
+//   dip_probe    : 1 = UART 핀 확인 모드. 두 핀 모두 입력으로 두고 LED 로 보여준다 (아무것도 구동하지 않음)
+//                  LED1/LED2 = F6/C6 에서 신호 변화가 있으면 0.2초 켜짐, LED7/LED8 = F6/C6 의 현재 레벨
+//                  PC 가 보내는 쪽(= USB 칩의 출력)이 깜빡인다. FPGA 는 그 반대쪽 핀으로 보내야 한다
 module top #(
     parameter integer CLK_HZ_OVERRIDE = 0,   // 0 이면 params.vh 의 CLK_HZ (시뮬레이션 단축용)
     // 보드 극성. 교재 확인 후 맞춘다.
@@ -15,9 +19,12 @@ module top #(
     input  wire       btn_reset,
     input  wire       dip_trig,
     input  wire       dip_test,
+    input  wire       dip_uart_sel,
+    input  wire       dip_probe,
     output wire [7:0] led,
     output wire       servo,
-    output wire       uart_txd
+    inout  wire       uart_f6,
+    inout  wire       uart_c6
 );
     `include "params.vh"
     localparam integer F_CLK = (CLK_HZ_OVERRIDE > 0) ? CLK_HZ_OVERRIDE : CLK_HZ;
@@ -47,13 +54,17 @@ module top #(
         .clk(clk), .rst(rst), .in(btn_reset ^ btn_inv), .level(), .rise(rs_rise), .fall());
 
     // 딥 스위치는 2단 동기화만 한다
-    reg [1:0] trig_s, test_s;
+    reg [1:0] trig_s, test_s, sel_s, probe_s;
     always @(posedge clk) begin
-        trig_s <= {trig_s[0], dip_trig ^ dip_inv};
-        test_s <= {test_s[0], dip_test ^ dip_inv};
+        trig_s  <= {trig_s[0],  dip_trig     ^ dip_inv};
+        test_s  <= {test_s[0],  dip_test     ^ dip_inv};
+        sel_s   <= {sel_s[0],   dip_uart_sel ^ dip_inv};
+        probe_s <= {probe_s[0], dip_probe    ^ dip_inv};
     end
-    wire trig_mode = trig_s[1];
-    wire test_mode = test_s[1];
+    wire trig_mode  = trig_s[1];
+    wire test_mode  = test_s[1];
+    wire uart_sel   = sel_s[1];
+    wire probe_mode = probe_s[1];
 
     // ---- 게임 코어 + 맵 ROM ----
     wire [13:0] map_addr;
@@ -99,7 +110,9 @@ module top #(
     wire [7:0] led_on;
     led_gauge u_led (.clk(clk), .rst(rst), .tick(tick_game),
                      .charging(state == 2'd1), .charge(charge), .led(led_on));
-    assign led = LED_ACTIVE_LOW ? ~led_on : led_on;
+    wire [7:0] led_probe;
+    wire [7:0] led_mux = probe_mode ? led_probe : led_on;
+    assign led = LED_ACTIVE_LOW ? ~led_mux : led_mux;
 
     servo_pwm #(.PERIOD_US(SERVO_PERIOD_US), .MIN_US(SERVO_MIN_US), .SLOPE(SERVO_SLOPE)) u_servo (
         .clk(clk), .rst(rst), .tick_us(tick_us), .angle(angle), .pwm(servo));
@@ -107,7 +120,7 @@ module top #(
     // ---- 패킷 송신 ----
     wire [7:0] status = {2'b00, bounce, land, trig_mode, facing, state};
     wire [7:0] tx_data;
-    wire       tx_valid, tx_ready;
+    wire       tx_valid, tx_ready, uart_txd;
 
     packet_tx u_pkt (
         .clk(clk), .rst(rst),
@@ -122,4 +135,25 @@ module top #(
 
     uart_tx #(.CLK_HZ(F_CLK), .BAUD(BAUD)) u_uart (
         .clk(clk), .rst(rst), .data(tx_data), .valid(tx_valid), .ready(tx_ready), .tx(uart_txd));
+
+    // ---- UART 핀: 고른 쪽만 구동하고 나머지는 입력 (확인 모드에서는 둘 다 입력) ----
+    assign uart_f6 = (!probe_mode && !uart_sel) ? uart_txd : 1'bz;
+    assign uart_c6 = (!probe_mode &&  uart_sel) ? uart_txd : 1'bz;
+
+    // 확인 모드: 각 핀의 레벨과 변화 여부를 LED 로
+    localparam integer HOLD = F_CLK / 5;               // 0.2초
+    reg [2:0] f6_s, c6_s;
+    reg [$clog2(HOLD+1)-1:0] f6_hold, c6_hold;
+    always @(posedge clk) begin
+        f6_s <= {f6_s[1:0], uart_f6};
+        c6_s <= {c6_s[1:0], uart_c6};
+        if (rst) begin
+            f6_hold <= 0;
+            c6_hold <= 0;
+        end else begin
+            if (f6_s[2] != f6_s[1]) f6_hold <= HOLD; else if (f6_hold != 0) f6_hold <= f6_hold - 1'b1;
+            if (c6_s[2] != c6_s[1]) c6_hold <= HOLD; else if (c6_hold != 0) c6_hold <= c6_hold - 1'b1;
+        end
+    end
+    assign led_probe = {c6_s[1], f6_s[1], 4'b0000, c6_hold != 0, f6_hold != 0};
 endmodule

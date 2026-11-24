@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """맵 원본(maps/screenN.txt) -> map.mem(FPGA) + map.json(뷰어) + params.vh 시작 위치.
 
 사용:  python tools/make_map.py

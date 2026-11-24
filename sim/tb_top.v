@@ -9,13 +9,26 @@ module tb_top;
     always #5 clk = ~clk;
 
     reg btn_charge = 0, btn_left = 0, btn_right = 0, btn_reset = 0, dip_trig = 0, dip_test = 1;
+    reg dip_uart_sel = 0, dip_probe = 0;
     wire [7:0] led;
-    wire servo, txd;
+    wire servo;
+    wire uart_f6, uart_c6;
+    // PC 쪽(USB 칩) 흉내: 확인 모드 시험에서만 C6 을 구동한다
+    reg c6_drv_en = 0, c6_drv = 1;
+    assign uart_c6 = c6_drv_en ? c6_drv : 1'bz;
+    pullup (uart_f6);                           // XDC 의 PULLUP 과 같게
+    pullup (uart_c6);
+    integer f6_low_while_c6 = 0;                // C6 로 보내는 동안 F6 이 0 으로 내려간 횟수 (0 이어야 함)
+    always @(negedge uart_f6) if (dip_uart_sel) f6_low_while_c6 = f6_low_while_c6 + 1;
+    // 수신기는 FPGA 가 고른 송신 핀을 본다 (High-Z 면 정지 상태 1)
+    wire txd_raw = dip_uart_sel ? uart_c6 : uart_f6;
+    wire txd = txd_raw;
 
     top #(.CLK_HZ_OVERRIDE(F)) dut (
         .clk(clk), .btn_charge(btn_charge), .btn_left(btn_left), .btn_right(btn_right),
         .btn_reset(btn_reset), .dip_trig(dip_trig), .dip_test(dip_test),
-        .led(led), .servo(servo), .uart_txd(txd));
+        .dip_uart_sel(dip_uart_sel), .dip_probe(dip_probe),
+        .led(led), .servo(servo), .uart_f6(uart_f6), .uart_c6(uart_c6));
 
     integer errors = 0, checks = 0;
     task expect_eq;
@@ -145,6 +158,28 @@ module tb_top;
         expect_eq("no bad packets", nbad, 0);
         pk0 = npkt; #(10 * (F / 60) * 10);               // 10 프레임 (클록 주기 10ns)
         expect_eq("one packet per frame", (npkt - pk0) >= 9 && (npkt - pk0) <= 11, 1);
+
+        // ---- 8. UART 핀 선택: C6 으로 송신, F6 은 High-Z ----
+        wait (!dut.u_pkt.busy); dip_uart_sel = 1; #(10 * 20);
+        expect_eq("sel=1: F6 released (pulled up)", dut.uart_f6 === 1'b1 && !(!dut.probe_mode && !dut.uart_sel), 1);
+        pk0 = npkt; wait_pkts(3);
+        expect_eq("sel=1: packets on C6", npkt - pk0, 3);
+        expect_eq("sel=1: no bad packets", nbad, 0);
+        expect_eq("sel=1: F6 stays idle (not driven)", f6_low_while_c6, 0);
+
+        // ---- 9. 확인 모드: 두 핀 모두 High-Z, PC 신호가 들어오는 핀의 LED 가 켜짐 ----
+        dip_probe = 1; #(10 * (F / 4));                  // 0.25초: 앞 단계 송신의 LED 표시가 꺼지기를 기다림
+        expect_eq("probe: FPGA drives neither pin", dut.probe_mode, 1);
+        expect_eq("probe: both pins idle high", {uart_f6, uart_c6}, 2'b11);
+        expect_eq("probe: no activity before PC sends", led[1:0], 0);
+        c6_drv_en = 1;
+        repeat (20) begin c6_drv = 0; #(10 * 52); c6_drv = 1; #(10 * 52); end
+        expect_eq("probe: LED2 (C6 activity) on", led[1], 1);
+        expect_eq("probe: LED1 (F6 activity) off", led[0], 0);
+        expect_eq("probe: LED8 = C6 level", led[7], 1);
+        #(10 * (F / 5) + 10 * 1000);
+        expect_eq("probe: LED2 off after 0.2s idle", led[1], 0);
+        c6_drv_en = 0; dip_probe = 0; dip_uart_sel = 0;
 
         if (errors == 0) $display("PASS (%0d checks, %0d packets)", checks, npkt);
         else             $display("FAILED: %0d errors", errors);

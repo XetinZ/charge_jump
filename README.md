@@ -26,15 +26,18 @@
 1. **CLOCK SELECT 를 1MHz 로** 맞춘다 (`params.vh` 의 `CLK_HZ = 1_000_000`). 다른 값을 쓰면 `CLK_HZ` 와 XDC 의 클록 주기를 같이 고친다.
 2. **SWA 스위치를 OFF(PUSH SWITCH)** 로 둔다 (버튼을 하나씩 직접 읽기 때문. 추정이므로 버튼이 안 먹으면 ON 으로 바꿔 본다).
 3. 뷰어는 **19200bps** 로 연다. 1MHz 에서 115200bps 는 분주 오차가 3.5% 라 쓸 수 없다.
-4. UART TX 방향: 실습 자료에도 없다. F6(USB_TXD0)으로 해 두었고, PC 에 아무것도 안 오면 C6 으로 바꿔 본다.
+4. UART 송신 핀: 실습 자료에도 없어서 F6, C6 을 모두 잡아 두었다. DIP_SW3 내림 = F6, 올림 = C6 으로 보낸다.
+   어느 쪽인지 모르면 DIP_SW4 를 올리고(두 핀 모두 입력, 아무것도 구동하지 않음) `py pc\uart_probe.py COM5` 를 실행한다.
+   LED1 이 깜빡이면 F6 이 칩 출력이니 DIP_SW3 을 올리고, LED2 가 깜빡이면 DIP_SW3 을 내린다. 끝나면 DIP_SW4 를 내린다.
 5. 서보가 끝까지 안 돌거나 떨면 `params.vh` 의 `SERVO_MIN_US`, `SERVO_SLOPE` 를 조금씩 조정한다 (7주차 자료도 보드마다 다르다고 함).
 
-딥 스위치: `dip_trig` 0 = ROM 표 / 1 = 테일러, `dip_test` 1 = 고정 패킷 송신 (x 320, y 240, 차지 32, 각도 45).
+딥 스위치: 1번 `dip_trig` 0 = ROM 표 / 1 = 테일러, 2번 `dip_test` 1 = 고정 패킷 송신 (x 320, y 240, 차지 32, 각도 45),
+3번 `dip_uart_sel` UART 송신 핀 0 = F6 / 1 = C6, 4번 `dip_probe` 1 = UART 핀 확인 모드 (LED 로 표시).
 
 ## 맵을 고쳤을 때
 
 ```
-python tools/make_map.py        # rtl/map.mem, pc/map.json, params.vh 의 시작 위치 갱신
+py tools\make_map.py          # rtl/map.mem, pc/map.json, params.vh 의 시작 위치 갱신
 ```
 맵이나 물리 상수를 바꾸면 `sim/tb_play.v` 의 점프 경로도 다시 잡아야 한다.
 
@@ -54,13 +57,13 @@ Vivado: 시뮬레이션 top 을 바꿔 가며 Run Simulation, 또는 `sim\run_xs
 Icarus Verilog: `sim/run_iverilog.sh`.
 
 테일러 오차 그래프: `tb_trig` 가 쓴 `trig_taylor_out.txt` 로
-`python tools/make_trig.py --rtl <경로>/trig_taylor_out.txt --plot err.png`
+`py tools\make_trig.py --rtl <경로>/trig_taylor_out.txt --plot err.png`
 
 ## 뷰어
 
 ```
-pip install pygame pyserial
-python pc/viewer.py COM3 [--baud 19200] [--csv log.csv] [--scale 2]
+py -m pip install pygame pyserial
+py pc\viewer.py COM3 [--baud 19200] [--csv log.csv] [--scale 2]
 ```
 
 ## 명세에 없어서 구현하면서 정한 것

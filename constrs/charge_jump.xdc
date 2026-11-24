@@ -18,6 +18,8 @@ set_property -dict {PACKAGE_PIN N1 IOSTANDARD LVCMOS33} [get_ports btn_reset]   
 ## ---- 딥 스위치: 위로 올리면 High (2주차 자료) ----
 set_property -dict {PACKAGE_PIN Y1 IOSTANDARD LVCMOS33} [get_ports dip_trig]    ;# DIP_SW1: 0 ROM / 1 테일러
 set_property -dict {PACKAGE_PIN W3 IOSTANDARD LVCMOS33} [get_ports dip_test]    ;# DIP_SW2: 1 고정 패킷
+set_property -dict {PACKAGE_PIN U2 IOSTANDARD LVCMOS33} [get_ports dip_uart_sel] ;# DIP_SW3: UART 송신 핀 0 F6 / 1 C6
+set_property -dict {PACKAGE_PIN T1 IOSTANDARD LVCMOS33} [get_ports dip_probe]    ;# DIP_SW4: 1 UART 핀 확인 모드
 
 ## ---- LED 8개: High 면 켜짐 (2주차 자료). led[0] = LED1 이 게이지의 첫 칸 ----
 set_property -dict {PACKAGE_PIN L4 IOSTANDARD LVCMOS33} [get_ports {led[0]}]
@@ -32,10 +34,13 @@ set_property -dict {PACKAGE_PIN N5 IOSTANDARD LVCMOS33} [get_ports {led[7]}]
 ## ---- 서보 PWM: SERVO_CTRL (7주차 자료와 같음) ----
 set_property -dict {PACKAGE_PIN AA22 IOSTANDARD LVCMOS33} [get_ports servo]
 
-## ---- UART TX: USB to Serial 의 USB_TXD0 ----
-## 이름만으로는 F6 이 FPGA 출력인지 확실하지 않다. PC 에 아무것도 오지 않으면 C6 (USB_RXD0) 로 바꿔 본다.
-## 별도 UART 커넥터를 쓰려면 UART_TXD1 = A3.
-set_property -dict {PACKAGE_PIN F6 IOSTANDARD LVCMOS33} [get_ports uart_txd]
+## ---- UART: USB to Serial 의 두 핀 ----
+## 핀맵 이름(USB_TXD0 / USB_RXD0)이 FPGA 기준인지 USB 칩 기준인지 확인되지 않아 두 핀을 다 잡고,
+## DIP_SW3 으로 송신 핀을 고른다. 고르지 않은 핀은 입력(High-Z)이다. DIP_SW4 를 올리면 둘 다 입력이 되고
+## LED 로 어느 핀에 PC 신호가 들어오는지 보여준다 (pc/uart_probe.py). 별도 UART 커넥터는 UART_TXD1 = A3.
+## 풀업: 입력으로 둔 핀이 떠서 잡음으로 깜빡이지 않게 한다 (칩 출력이 연결된 쪽은 칩이 이긴다)
+set_property -dict {PACKAGE_PIN F6 IOSTANDARD LVCMOS33 PULLUP true} [get_ports uart_f6]     ;# USB_TXD0
+set_property -dict {PACKAGE_PIN C6 IOSTANDARD LVCMOS33 PULLUP true} [get_ports uart_c6]     ;# USB_RXD0
 
 ## 버튼·스위치는 비동기 입력이므로 타이밍 분석에서 제외
 set_false_path -from [get_ports {btn_* dip_*}]
