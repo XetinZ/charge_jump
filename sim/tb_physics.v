@@ -16,15 +16,17 @@ module tb_physics;
     localparam integer T_NSCR = 2, T_SX = 32, T_SY = 448;
     `include "tb_harness.vh"
 
-    integer n, i, fd, min_py;
+    integer n, i, fd, min_py, n_rise;
 
     task traced_fly;
         output integer nf;
         begin
-            nf = 0; min_py = py;
+            nf = 0; min_py = py; n_rise = 0;
             while (state == 2'd2 && nf < 500) begin
                 do_tick; nf = nf + 1;
                 if (py < min_py) min_py = py;
+                if (rising) n_rise = n_rise + 1;
+                if (rising !== (dut.vy < 0)) begin errors = errors + 1; $display("  FAIL rising flag mismatch"); end
                 $fdisplay(fd, "%0d %0d %0d %0d %0d", nf, px, py, dut.vx, dut.vy);
             end
         end
@@ -68,6 +70,7 @@ module tb_physics;
         $fdisplay(fd, "# vertical charge=63");
         traced_fly(n);
         expect_eq("vertical: peak py", min_py, 312);
+        expect_eq("vertical: rising frames (vy<0)", n_rise, 23);
         expect_eq("vertical: landing frame", n, 47);
         expect_eq("vertical: landing py", py, 448);
         expect_eq("vertical: landing px", px, 32);

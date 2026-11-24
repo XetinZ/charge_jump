@@ -62,16 +62,40 @@ class PacketParser:
         return out
 
 
-def draw_map(pg, surf, rows, tile):
+ASSET_DIR = Path(__file__).with_name("assets")
+HERO_SIZE = 24          # 캐릭터 그림 칸. 충돌 상자(16x16)의 발밑 가운데에 맞춘다
+LAND_SHOW = 8           # 착지 그림을 보여주는 프레임 수 (그림 효과)
+
+
+def load_assets(pg):
+    """pc/assets 의 그림을 읽는다. 하나라도 없으면 None (도형으로 그린다). tools/make_assets.py 가 만든다."""
+    names = ([f"bg{i}" for i in range(3)] + [f"tile{i}" for i in range(3)] + ["goal"] +
+             [f"hero_{n}" for n in ("idle", "charge", "rise", "fall", "land", "win")])
+    try:
+        return {n: pg.image.load(str(ASSET_DIR / f"{n}.png")).convert_alpha() for n in names}
+    except (FileNotFoundError, pg.error):
+        return None
+
+
+def draw_map(pg, surf, rows, tile, assets=None, index=0):
     surf.fill(BG)
+    k = min(index, 2)
+    if assets:
+        surf.blit(assets[f"bg{k}"], (0, 0))
     for ty, row in enumerate(rows):
         for tx, ch in enumerate(row):
             r = pg.Rect(tx * tile, ty * tile, tile, tile)
             if ch == "#":
-                pg.draw.rect(surf, WALL, r)
-                pg.draw.line(surf, WALL_EDGE, r.topleft, (r.right - 1, r.top))
+                if assets:
+                    surf.blit(assets[f"tile{k}"], r.topleft)
+                else:
+                    pg.draw.rect(surf, WALL, r)
+                    pg.draw.line(surf, WALL_EDGE, r.topleft, (r.right - 1, r.top))
             elif ch == "G":
-                pg.draw.rect(surf, GOAL, r.inflate(-4, -4), border_radius=3)
+                if assets:
+                    surf.blit(assets["goal"], r.topleft)
+                else:
+                    pg.draw.rect(surf, GOAL, r.inflate(-4, -4), border_radius=3)
 
 
 def make_dark_masks(pg, w, h):
@@ -128,11 +152,19 @@ def main():
     sprite_r = make_sprite(pg, tile)
     sprite_l = pg.transform.flip(sprite_r, True, False)
     dark_masks = make_dark_masks(pg, w, h)
+    assets = load_assets(pg)
+    hero = {}
+    if assets:
+        for n in ("idle", "charge", "rise", "fall", "land", "win"):
+            img = assets[f"hero_{n}"]
+            hero[(n, False)] = img
+            hero[(n, True)] = pg.transform.flip(img, True, False)
     map_surfs = []
-    for rows in m["screens"]:
+    for i, rows in enumerate(m["screens"]):
         s = pg.Surface((w, h))
-        draw_map(pg, s, rows, tile)
+        draw_map(pg, s, rows, tile, assets, i)
         map_surfs.append(s)
+    land_left = 0               # 착지 그림을 남은 몇 프레임 더 보여줄지 (그림 효과일 뿐 게임과 무관)
 
     parser = PacketParser()
     last = None                 # (x, y, screen, charge, angle, status) — 마지막으로 받은 값
@@ -150,6 +182,10 @@ def main():
         if n:
             for pkt in parser.feed(ser.read(n)):
                 last, last_time = pkt, time.time()
+                if pkt[5] & 0x10:                          # 착지 비트
+                    land_left = LAND_SHOW
+                elif land_left:
+                    land_left -= 1
                 if log:
                     log.writerow([f"{last_time - t0:.4f}", *pkt])
 
@@ -165,12 +201,20 @@ def main():
                 hint = "bytes but no packet: check CLOCK SELECT = 1MHz and --baud"
             canvas.blit(font.render(hint, True, DIM), (16, 64))
         else:
-            x, y, screen, charge, angle, status = last
+            x, y, scr_byte, charge, angle, status = last
+            screen, rising = scr_byte & 7, bool(scr_byte & 8)
             state, left, taylor = status & 3, bool(status & 4), bool(status & 8)
             dark = (status >> 6) & 3
             if screen < len(map_surfs):
                 canvas.blit(map_surfs[screen], (0, 0))
-            canvas.blit(sprite_l if left else sprite_r, (x, y))
+            if hero:
+                # 그림 고르기: 모두 FPGA 가 보낸 상태 비트로 정한다
+                pose = ("win" if state == 3 else "charge" if state == 1 else
+                        ("rise" if rising else "fall") if state == 2 else
+                        "land" if land_left else "idle")
+                canvas.blit(hero[(pose, left)], (x + tile // 2 - HERO_SIZE // 2, y + tile - HERO_SIZE))
+            else:
+                canvas.blit(sprite_l if left else sprite_r, (x, y))
 
             # 각도 화살표 (표시용 삼각함수. 게임 결과와 무관)
             if state in (0, 1):

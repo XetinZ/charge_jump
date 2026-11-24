@@ -1,6 +1,6 @@
 // packet_tx.v — 상태를 11바이트 패킷으로 직렬화한다 (명세 4장).
 // send 펄스가 온 순간의 값을 복사해 두고 보내므로 전송 중에 값이 바뀌어도 섞이지 않는다.
-//   0:0xAA 1:0x55 2-3:x 4-5:y 6:screen 7:charge 8:angle 9:status 10:XOR(2..9)
+//   0:0xAA 1:0x55 2-3:x 4-5:y 6:{0000, rising, screen} 7:charge 8:angle 9:status 10:XOR(2..9)
 module packet_tx (
     input  wire        clk,
     input  wire        rst,
@@ -8,6 +8,7 @@ module packet_tx (
     input  wire signed [15:0] x_px,      // 픽셀 정수부
     input  wire signed [15:0] y_px,
     input  wire [2:0]  screen,
+    input  wire        rising,
     input  wire [5:0]  charge,
     input  wire [7:0]  angle,
     input  wire [7:0]  status,
@@ -33,7 +34,7 @@ module packet_tx (
         end else if (!busy) begin
             tx_valid <= 1'b0;
             if (send) begin
-                payload <= {x_px, y_px, 5'b0, screen, 2'b0, charge, angle, status};
+                payload <= {x_px, y_px, 4'b0, rising, screen, 2'b0, charge, angle, status};
                 idx     <= 0;
                 csum    <= 0;
                 busy    <= 1'b1;

@@ -115,7 +115,7 @@ module top #(
     wire [5:0]  charge;
     wire [7:0]  angle;
     wire [1:0]  state;
-    wire        facing, land, bounce, fell, send;
+    wire        facing, land, bounce, fell, rising, send;
 
     map_rom u_map (.clk(clk), .addr(map_addr), .data(map_data));
 
@@ -128,7 +128,7 @@ module top #(
         .map_addr(map_addr), .map_data(map_data),
         .trig_start(trig_start), .trig_sin(trig_sin), .trig_cos(trig_cos), .trig_done(trig_done),
         .x(gx), .y(gy), .screen(screen), .charge(charge), .angle(angle),
-        .state(state), .facing(facing), .land(land), .bounce(bounce), .fell(fell), .send(send));
+        .state(state), .facing(facing), .land(land), .bounce(bounce), .fell(fell), .rising(rising), .send(send));
 
     // ---- 삼각함수: 두 버전을 함께 돌리고 스위치로 고른다 ----
     wire signed [13:0] sin_rom, cos_rom, sin_tay, cos_tay;
@@ -202,6 +202,7 @@ module top #(
         .x_px  (test_mode ? 16'sd320  : {{4{gx[15]}}, gx[15:4]}),
         .y_px  (test_mode ? 16'sd240  : {{4{gy[15]}}, gy[15:4]}),
         .screen(test_mode ? 3'd0      : screen),
+        .rising(test_mode ? 1'b0      : rising),
         .charge(test_mode ? 6'd32     : charge),
         .angle (test_mode ? 8'd45     : angle),
         .status(test_mode ? 8'h01     : status),

@@ -89,6 +89,13 @@ Icarus Verilog: `sim/run_iverilog.sh`.
 테일러 오차 그래프: `tb_trig` 가 쓴 `trig_taylor_out.txt` 로
 `py tools\make_trig.py --rtl <경로>/trig_taylor_out.txt --plot err.png`
 
+## 그림 (에셋)
+
+ChatGPT 로 만든 원본은 `pc\assets\src` 에 둔다 (`sprites.png`, `tiles.png`, `bg_forest.png`, `bg_sky.png`, `bg_space.png`).
+`py -m pip install pillow numpy` 후 `py tools\make_assets.py` 를 실행하면 뷰어용 그림(배경 640x480, 타일 16x16,
+캐릭터 24x24 여섯 동작)과 확인용 `preview.png` 가 `pc\assets` 에 생긴다. 그림이 없으면 뷰어는 도형으로 그린다.
+캐릭터 동작은 FPGA 가 보낸 비트로만 고른다: 차지(상태 1), 상승/낙하(공중 + 패킷 6번 바이트 비트 3), 착지(착지 비트 후 8프레임), 승리(클리어).
+
 ## 뷰어
 
 ```

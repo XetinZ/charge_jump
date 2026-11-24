@@ -44,6 +44,7 @@ module game_core #(
     output reg         land,          // 이번 프레임에 착지
     output reg         bounce,        // 이번 프레임에 벽에 튕김
     output reg         fell,          // 이번 프레임에 아래 화면으로 떨어짐
+    output wire        rising,        // 공중에서 올라가는 중 (vy < 0). 뷰어의 그림 선택용
     output reg         send           // 갱신 완료, 패킷 송신 요청 (1클록)
 );
     `include "params.vh"
@@ -82,6 +83,7 @@ module game_core #(
     wire signed [11:0] ynpx = yn[15:4];
 
     assign facing = (angle > 8'd90);
+    assign rising = (state == 2'd2) && vy[11];
 
     // ---------------- 버튼 래치 (틱 사이에 지나간 짧은 누름을 놓치지 않기 위함) ----------------
     reg charge_l, left_l, right_l, reset_l;
